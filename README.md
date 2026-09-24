@@ -1,69 +1,72 @@
 # kanka-mcp
 
-Zero-dependency [MCP](https://modelcontextprotocol.io) server for the [Kanka.io](https://kanka.io) API (v1.0).
-Single file, pure Node (>= 18), no build step, no node_modules.
+Serveur MCP (Model Context Protocol) **zéro dépendance** pour l'API
+[Kanka.io](https://kanka.io) — gestionnaire de campagnes de JDR.
 
-## Features
+- Node.js >= 18, aucun `npm install`
+- 2 transports : **stdio** (client local) et **HTTP** (déploiement permanent, systemd)
+- 15 outils : recherche globale, CRUD sur les 18 modules Kanka (characters, locations,
+  notes, journals, events, creatures, abilities, tags, ...), posts des entités,
+  sous-ressources (attributes, relationships, inventory, ...)
+- Écriture en markdown convertie en HTML à la Kanka, mentions `[entity:123]` préservées
+- Auth HTTP optionnelle par bearer token
 
-- 15 tools: campaigns, search, full CRUD on all Kanka modules, entity posts (CRUD), entity sub-resources, health check
-- All 18 Kanka modules: characters, locations, families, organisations, items, notes, events, calendars, timelines, creatures, races, quests, maps, journals, abilities, tags, conversations, dice_rolls
-- Markdown entry fields converted to HTML automatically (Kanka mentions like `[entity:123]` preserved)
-- Batch creation with per-record error tolerance
-- Incremental sync via Kanka native `lastSync`
-- Rate-limit budget exposed (Kanka allows 90 requests/minute)
+## Installation rapide (local, stdio)
 
-## Setup
-
-1. Create an API token on Kanka: **Profile > API Settings**
-2. Configure your MCP client:
-
-```json
-{
-  "mcpServers": {
-    "kanka": {
-      "command": "node",
-      "args": ["/path/to/kanka-mcp/server.js"],
-      "env": {
-        "KANKA_API_TOKEN": "your-token",
-        "KANKA_DEFAULT_CAMPAIGN": "your-campaign-id"
-      }
-    }
-  }
-}
+```bash
+git clone git@github.com:frantz2501/kanka-mcp.git
+export KANKA_API_TOKEN=ton_token     # Profile > API sur kanka.io
+export KANKA_DEFAULT_CAMPAIGN=123456
+node server.js
 ```
 
-`KANKA_DEFAULT_CAMPAIGN` / `KANKA_CAMPAIGN_ID` is optional; if set, `campaign_id` can be omitted in tool calls.
+## Déploiement permanent (Ubuntu 24.04, HTTP)
 
-## Tools
+Voir [DEPLOY.md](DEPLOY.md) — script `install.sh`, unit systemd, config client
+Vibe CLI (`~/.vibe/config.toml`), tunnel SSH ou reverse proxy TLS.
 
-| Tool | Description |
-|------|-------------|
-| `kanka_list_campaigns` | List campaigns the user can access |
-| `kanka_get_campaign` | Get one campaign |
-| `kanka_search` | Server-side entity search by keyword |
-| `kanka_list` | List records of a module (filters, pagination, lastSync) |
-| `kanka_get` | Get one record by module + id |
-| `kanka_create` | Create one record or a batch |
-| `kanka_update` | PATCH a record |
-| `kanka_delete` | Delete a record |
-| `kanka_get_entity` | Get any entity by entity_id |
-| `kanka_list_entity_relations` | abilities, attributes, inventory, reminders, mentions, connections, relationships, entity_events |
-| `kanka_list_entity_posts` | List posts of an entity |
-| `kanka_create_entity_post` | Create a post (Markdown entry) |
-| `kanka_update_entity_post` | PATCH a post |
-| `kanka_delete_entity_post` | Delete a post |
-| `kanka_health` | Connectivity + rate-limit check |
+## Configuration
+
+| Variable | Obligatoire | Défaut | Description |
+|---|---|---|---|
+| `KANKA_API_TOKEN` (`KANKA_TOKEN`) | oui | — | Token API Kanka |
+| `KANKA_DEFAULT_CAMPAIGN` (`KANKA_CAMPAIGN_ID`) | non | — | Campagne par défaut |
+| `KANKA_API_BASE` | non | `https://api.kanka.io/1.0` | Base URL API (utile pour les tests) |
+| `KANKA_MCP_BIND` (HTTP) | non | `127.0.0.1` | Adresse d'écoute |
+| `KANKA_MCP_PORT` (HTTP) | non | `3333` | Port d'écoute |
+| `KANKA_MCP_HTTP_TOKEN` (HTTP) | recommandé | — | Bearer token exigé des clients |
+
+Options CLI HTTP : `--http`, `--port N`, `--bind ADDR`.
+
+## Outils
+
+| Outil | Description |
+|---|---|
+| `kanka_search` | Recherche globale (`/search`) |
+| `kanka_get_entity` | Entité par id/type |
+| `kanka_list_entities` | Liste/pagination d'un module |
+| `kanka_create_entity` | Création (markdown → HTML) |
+| `kanka_update_entity` | Mise à jour |
+| `kanka_delete_entity` | Suppression (force possible) |
+| `kanka_list_posts` / `kanka_get_post` | Posts d'une entité |
+| `kanka_create_post` / `kanka_update_post` / `kanka_delete_post` | CRUD posts |
+| `kanka_list_sub` / `kanka_create_sub` / `kanka_update_sub` / `kanka_delete_sub` | Sous-ressources (attributes, relationships, inventory, ...) |
+
+Modules : characters, locations, families, organisations, items, notes, events,
+calendars, timelines, creatures, races, quests, maps, journals, abilities, tags,
+conversations, dice_rolls.
 
 ## Tests
 
-Integration tests run against a local mock of the Kanka API (no network, no token needed):
-
 ```bash
-npm test
+cd test && bash run.sh    # 18 tests sur un mock local de l'API Kanka
 ```
 
-The harness spawns the server over stdio, plays the MCP handshake and asserts 18 behaviours (CRUD, markdown conversion, mentions, batch, posts, rate-limit headers, error paths).
+## Références
 
-## License
+- API Kanka : https://docs.kanka.io/en/latest/advanced/api.html (rate limit 90 req/min)
+- Inspiration markdown/posts : https://github.com/ervwalter/mcp-kanka
+
+## Licence
 
 MIT

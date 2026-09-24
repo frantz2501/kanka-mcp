@@ -4,19 +4,29 @@
  * Docs: https://docs.kanka.io/en/latest/advanced/api.html
  * Inspired in part by ervwalter/mcp-kanka (markdown handling, lastSync, posts).
  *
- * Transport: stdio (newline-delimited JSON-RPC 2.0 / MCP). Node >= 18.
+ * Transports:
+ *   stdio (default)  - for local MCP clients (Vibe CLI, Claude Desktop, ...)
+ *   http  (--http)   - for a persistent remote deployment (systemd)
+ *
+ * Node >= 18. No dependencies.
  *
  * Env:
  *   KANKA_API_TOKEN or KANKA_TOKEN              (required) token from Profile > API
  *   KANKA_DEFAULT_CAMPAIGN or KANKA_CAMPAIGN_ID (optional) default campaign id
  *   KANKA_API_BASE                              (optional) default https://api.kanka.io/1.0
+ *
+ * HTTP mode only:
+ *   KANKA_MCP_PORT       (optional) listen port, default 3333
+ *   KANKA_MCP_BIND       (optional) bind address, default 127.0.0.1
+ *   KANKA_MCP_HTTP_TOKEN (recommended) if set, requires "Authorization: Bearer <token>"
  */
 'use strict';
 
 import readline from 'node:readline';
+import http from 'node:http';
 
 const PROTOCOL_VERSION = '2024-11-05';
-const SERVER_INFO = { name: 'kanka-mcp', version: '1.1.0' };
+const SERVER_INFO = { name: 'kanka-mcp', version: '1.2.0' };
 const API_BASE = (process.env.KANKA_API_BASE || 'https://api.kanka.io/1.0').replace(/\/$/, '');
 const TOKEN = process.env.KANKA_API_TOKEN || process.env.KANKA_TOKEN || '';
 const DEFAULT_CAMPAIGN = Number(
@@ -366,53 +376,72 @@ const tools = {
   },
 };
 
-// --- MCP over stdio
-function send(obj) { process.stdout.write(JSON.stringify(obj) + '\n'); }
+// --- JSON-RPC dispatch (transport-agnostic): returns a response object or null
+function dispatch(msg) {
+  if (!msg || typeof msg !== 'object') return Promise.resolve(null);
+  const { id, method, params } = msg;
+  if (method === 'notifications/initialized') return Promise.resolve(null);
 
-const handlers = {
-  initialize: (id) =>
-    send({
+  if (method === 'initialize') {
+    return Promise.resolve({
       jsonrpc: '2.0', id,
       result: {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },
         serverInfo: SERVER_INFO,
       },
-    }),
-  ping: (id) => send({ jsonrpc: '2.0', id, result: {} }),
-  'tools/list': (id) =>
-    send({
+    });
+  }
+  if (method === 'ping') return Promise.resolve({ jsonrpc: '2.0', id, result: {} });
+  if (method === 'tools/list') {
+    return Promise.resolve({
       jsonrpc: '2.0', id,
       result: {
         tools: Object.entries(tools).map(([name, t]) => ({
           name, description: t.description, inputSchema: t.inputSchema,
         })),
       },
-    }),
-  'tools/call': async (id, params) => {
+    });
+  }
+  if (method === 'tools/call') {
     const tool = tools[params?.name];
     if (!tool) {
-      send({
+      return Promise.resolve({
         jsonrpc: '2.0', id,
         result: { content: [{ type: 'text', text: 'Unknown tool: ' + params?.name }], isError: true },
       });
-      return;
     }
-    try {
-      const data = await tool.handler(params.arguments || {});
-      let text = JSON.stringify(data, null, 2) ?? 'null';
-      if (text.length > 100000) text = text.slice(0, 100000) + '\n... (truncated)';
-      send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }] } });
-    } catch (err) {
-      send({
+    return tool.handler(params.arguments || {}).then(
+      (data) => {
+        let text = JSON.stringify(data, null, 2) ?? 'null';
+        if (text.length > 100000) text = text.slice(0, 100000) + '\n... (truncated)';
+        return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }] } };
+      },
+      (err) => ({
         jsonrpc: '2.0', id,
         result: { content: [{ type: 'text', text: String(err?.message || err) }], isError: true },
-      });
-    }
-  },
-};
+      }),
+    );
+  }
+  return Promise.resolve({
+    jsonrpc: '2.0', id,
+    error: { code: -32601, message: 'Method not found: ' + method },
+  });
+}
 
-async function main() {
+// --- CLI args
+const argv = process.argv.slice(2);
+const HTTP_MODE = argv.includes('--http');
+const argVal = (flag, fallback) => {
+  const i = argv.indexOf(flag);
+  return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
+};
+const HTTP_PORT = Number(argVal('--port', process.env.KANKA_MCP_PORT || '3333'));
+const HTTP_BIND = argVal('--bind', process.env.KANKA_MCP_BIND || '127.0.0.1');
+const HTTP_TOKEN = process.env.KANKA_MCP_HTTP_TOKEN || '';
+
+// --- stdio transport
+function runStdio() {
   if (!TOKEN) {
     console.error('kanka-mcp: missing KANKA_API_TOKEN (or KANKA_TOKEN) environment variable.');
     console.error('Create one at https://app.kanka.io/ > Profile > API Settings.');
@@ -424,19 +453,65 @@ async function main() {
     if (!line) return;
     let msg;
     try { msg = JSON.parse(line); } catch { return; }
-    const { id, method, params } = msg;
-    if (method === 'notifications/initialized') return;
-    const handler = handlers[method];
-    if (!handler) {
-      send({ jsonrpc: '2.0', id, error: { code: -32601, message: 'Method not found: ' + method } });
-      return;
-    }
-    Promise.resolve(handler(id, params)).catch((e) =>
-      send({ jsonrpc: '2.0', id, error: { code: -32603, message: String(e?.message || e) } }),
-    );
+    dispatch(msg).then((res) => {
+      if (res) process.stdout.write(JSON.stringify(res) + '\n');
+    });
   });
   rl.on('close', () => process.exit(0));
-  console.error('kanka-mcp v' + SERVER_INFO.version + ' ready (base: ' + API_BASE + ')');
+  console.error('kanka-mcp v' + SERVER_INFO.version + ' ready (stdio, base: ' + API_BASE + ')');
 }
 
-main();
+// --- http transport (JSON responses, stateless)
+function runHttp() {
+  if (!TOKEN) {
+    console.error('kanka-mcp: missing KANKA_API_TOKEN (or KANKA_TOKEN) environment variable.');
+    process.exit(1);
+  }
+  const server = http.createServer((req, res) => {
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        server: SERVER_INFO.name,
+        version: SERVER_INFO.version,
+        transport: 'http',
+        status: 'ok',
+      }));
+    }
+    if (req.method !== 'POST') {
+      res.writeHead(405, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'method not allowed' }));
+    }
+    if (HTTP_TOKEN && req.headers.authorization !== 'Bearer ' + HTTP_TOKEN) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'unauthorized' }));
+    }
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      let msg;
+      try {
+        msg = JSON.parse(Buffer.concat(chunks).toString());
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'invalid JSON' }));
+      }
+      const messages = Array.isArray(msg) ? msg : [msg];
+      Promise.all(messages.map(dispatch)).then((responses) => {
+        const body = Array.isArray(msg)
+          ? responses.filter(Boolean)
+          : (responses[0] || { jsonrpc: '2.0', id: null, result: {} });
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(body));
+      });
+    });
+  });
+  server.listen(HTTP_PORT, HTTP_BIND, () => {
+    console.error(
+      'kanka-mcp v' + SERVER_INFO.version + ' ready (http://' + HTTP_BIND + ':' + HTTP_PORT +
+      ', base: ' + API_BASE + (HTTP_TOKEN ? ', auth: bearer' : ', auth: none') + ')',
+    );
+  });
+}
+
+if (HTTP_MODE) runHttp();
+else runStdio();
