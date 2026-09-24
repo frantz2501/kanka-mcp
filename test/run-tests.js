@@ -1,8 +1,9 @@
 // MCP client harness: spawns the server, plays the handshake, calls tools, asserts.
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 const port = Number(process.argv[2]);
-const proc = spawn('node', ['server.js'], {
-  cwd: new URL('.', import.meta.url).pathname.replace(/\/test\/$/, '/'),
+const proc = spawn(process.execPath, ['server.js'], {
+  cwd: fileURLToPath(new URL('.', import.meta.url)).replace(/[\\/]test[\\/]$/, ''),
   env: { ...process.env, KANKA_API_TOKEN: 'tok-test', KANKA_DEFAULT_CAMPAIGN: '42', KANKA_API_BASE: 'http://127.0.0.1:' + port },
 });
 let buf = '', nextId = 1;

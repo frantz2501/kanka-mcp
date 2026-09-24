@@ -4,33 +4,77 @@
  * Docs: https://docs.kanka.io/en/latest/advanced/api.html
  * Inspired in part by ervwalter/mcp-kanka (markdown handling, lastSync, posts).
  *
- * Transports:
- *   stdio (default)  - for local MCP clients (Vibe CLI, Claude Desktop, ...)
- *   http  (--http)   - for a persistent remote deployment (systemd)
+ * Transports / modes:
+ *   stdio (default)   - for local MCP clients (Vibe CLI, Claude Desktop, ...)
+ *                       automatic when stdin is piped (or --stdio)
+ *   http  (--http)    - for a persistent remote deployment (systemd)
+ *   local app (--local) - run directly in a terminal: serves HTTP on
+ *                       http://127.0.0.1:3333 with a friendly banner.
+ *                       Automatic when stdin is a TTY (a human ran it).
  *
  * Node >= 18. No dependencies.
  *
- * Env:
- *   KANKA_API_TOKEN or KANKA_TOKEN              (required) token from Profile > API
- *   KANKA_DEFAULT_CAMPAIGN or KANKA_CAMPAIGN_ID (optional) default campaign id
- *   KANKA_API_BASE                              (optional) default https://api.kanka.io/1.0
+ * Config priority: environment variables > kanka-mcp.json > defaults.
+ * The config file is searched next to server.js, then in the working
+ * directory, then in %APPDATA%\kanka-mcp\config.json.
  *
- * HTTP mode only:
- *   KANKA_MCP_PORT       (optional) listen port, default 3333
- *   KANKA_MCP_BIND       (optional) bind address, default 127.0.0.1
- *   KANKA_MCP_HTTP_TOKEN (recommended) if set, requires "Authorization: Bearer <token>"
+ * Env (config key):
+ *   KANKA_API_TOKEN or KANKA_TOKEN       (apiToken)       required - Profile > API
+ *   KANKA_DEFAULT_CAMPAIGN / KANKA_CAMPAIGN_ID (defaultCampaign) optional
+ *   KANKA_API_BASE                        (apiBase)        default https://api.kanka.io/1.0
+ *   KANKA_MCP_PORT                        (port)           default 3333
+ *   KANKA_MCP_BIND                        (bind)           default 127.0.0.1
+ *   KANKA_MCP_HTTP_TOKEN                  (httpToken)      recommended when not on localhost
  */
 'use strict';
 
 import readline from 'node:readline';
 import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const PROTOCOL_VERSION = '2024-11-05';
-const SERVER_INFO = { name: 'kanka-mcp', version: '1.2.0' };
-const API_BASE = (process.env.KANKA_API_BASE || 'https://api.kanka.io/1.0').replace(/\/$/, '');
-const TOKEN = process.env.KANKA_API_TOKEN || process.env.KANKA_TOKEN || '';
+const SERVER_INFO = { name: 'kanka-mcp', version: '1.4.0' };
+
+// --- Local app config file (env vars always win over file values)
+function loadConfigFile() {
+  const candidates = [];
+  try { candidates.push(path.join(path.dirname(process.argv[1] || ''), 'kanka-mcp.json')); } catch {}
+  candidates.push(path.join(process.cwd(), 'kanka-mcp.json'));
+  if (process.env.APPDATA) {
+    candidates.push(path.join(process.env.APPDATA, 'kanka-mcp', 'config.json'));
+  }
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return { path: p, cfg: JSON.parse(fs.readFileSync(p, 'utf8')) };
+    } catch (e) {
+      console.error('kanka-mcp: invalid config file ' + p + ': ' + (e.message || e));
+    }
+  }
+  return { path: null, cfg: {} };
+}
+const { path: CONFIG_PATH, cfg: CONFIG } = loadConfigFile();
+
+// env var if set, else config key, else undefined
+function pick(envKey, cfgKeys) {
+  const v = process.env[envKey];
+  if (v !== undefined && v !== '') return v;
+  for (const k of cfgKeys) {
+    const cv = CONFIG[k];
+    if (cv !== undefined && cv !== null && cv !== '') return String(cv);
+  }
+  return undefined;
+}
+
+const API_BASE = (
+  pick('KANKA_API_BASE', ['apiBase', 'api_base']) || 'https://api.kanka.io/1.0'
+).replace(/\/$/, '');
+const TOKEN =
+  pick('KANKA_API_TOKEN', ['apiToken', 'api_token']) ||
+  pick('KANKA_TOKEN', ['apiToken', 'api_token']) || '';
 const DEFAULT_CAMPAIGN = Number(
-  process.env.KANKA_DEFAULT_CAMPAIGN || process.env.KANKA_CAMPAIGN_ID || NaN,
+  pick('KANKA_DEFAULT_CAMPAIGN', ['defaultCampaign', 'default_campaign']) ||
+  pick('KANKA_CAMPAIGN_ID', ['defaultCampaign', 'default_campaign']) || NaN,
 );
 
 const MODULES = [
@@ -431,19 +475,27 @@ function dispatch(msg) {
 
 // --- CLI args
 const argv = process.argv.slice(2);
-const HTTP_MODE = argv.includes('--http');
 const argVal = (flag, fallback) => {
   const i = argv.indexOf(flag);
   return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
 };
-const HTTP_PORT = Number(argVal('--port', process.env.KANKA_MCP_PORT || '3333'));
-const HTTP_BIND = argVal('--bind', process.env.KANKA_MCP_BIND || '127.0.0.1');
-const HTTP_TOKEN = process.env.KANKA_MCP_HTTP_TOKEN || '';
+// Local app mode: --local, or run directly in a terminal (stdin is a TTY).
+// MCP clients (Claude Desktop, Vibe CLI, ...) pipe stdin -> stdio transport.
+const STDIO_MODE = argv.includes('--stdio');
+const LOCAL_MODE = argv.includes('--local');
+const HTTP_MODE =
+  argv.includes('--http') || LOCAL_MODE || (!STDIO_MODE && process.stdin.isTTY);
+const HTTP_PORT = Number(argVal('--port', pick('KANKA_MCP_PORT', ['port']) || '3333'));
+const HTTP_BIND = argVal('--bind', pick('KANKA_MCP_BIND', ['bind']) || '127.0.0.1');
+const HTTP_TOKEN = pick('KANKA_MCP_HTTP_TOKEN', ['httpToken', 'http_token']) || '';
 
 // --- stdio transport
 function runStdio() {
   if (!TOKEN) {
-    console.error('kanka-mcp: missing KANKA_API_TOKEN (or KANKA_TOKEN) environment variable.');
+    console.error(
+      'kanka-mcp: missing Kanka API token (KANKA_API_TOKEN / KANKA_TOKEN env, ' +
+      'or "apiToken" in ' + (CONFIG_PATH || 'kanka-mcp.json') + ').',
+    );
     console.error('Create one at https://app.kanka.io/ > Profile > API Settings.');
     process.exit(1);
   }
@@ -462,11 +514,24 @@ function runStdio() {
 }
 
 // --- http transport (JSON responses, stateless)
-function runHttp() {
-  if (!TOKEN) {
-    console.error('kanka-mcp: missing KANKA_API_TOKEN (or KANKA_TOKEN) environment variable.');
+function missingTokenExit() {
+  console.error('kanka-mcp: no Kanka API token found.');
+  console.error('Create one at https://app.kanka.io (Profile > API), then either:');
+  console.error('  - put {"apiToken": "your_token"} in ' +
+    (CONFIG_PATH || 'kanka-mcp.json next to server.js'));
+  console.error('  - or set the KANKA_API_TOKEN environment variable');
+  if (process.stdin.isTTY) {
+    // Terminal / double-clicked run: keep the window open instead of flashing.
+    console.error('Press Enter to close...');
+    process.stdin.resume();
+    process.stdin.once('data', () => process.exit(1));
+  } else {
     process.exit(1);
   }
+}
+
+function runHttp() {
+  if (!TOKEN) return missingTokenExit();
   const server = http.createServer((req, res) => {
     if (req.method === 'GET' || req.method === 'HEAD') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -505,7 +570,23 @@ function runHttp() {
       });
     });
   });
+  if (HTTP_BIND !== '127.0.0.1' && HTTP_BIND !== 'localhost' && !HTTP_TOKEN) {
+    console.error(
+      'kanka-mcp: WARNING - listening on ' + HTTP_BIND + ' without KANKA_MCP_HTTP_TOKEN: ' +
+      'anyone who can reach this port can use your Kanka token.',
+    );
+  }
   server.listen(HTTP_PORT, HTTP_BIND, () => {
+    if (LOCAL_MODE || process.stdin.isTTY) {
+      // Friendly banner for a human running the local app.
+      console.log('kanka-mcp v' + SERVER_INFO.version + ' - local app');
+      console.log('  URL      : http://' + HTTP_BIND + ':' + HTTP_PORT + '/');
+      console.log('  API base : ' + API_BASE);
+      console.log('  Config   : ' + (CONFIG_PATH || 'none (environment variables only)'));
+      if (Number.isInteger(DEFAULT_CAMPAIGN)) console.log('  Campaign : ' + DEFAULT_CAMPAIGN);
+      console.log('  Auth     : ' + (HTTP_TOKEN ? 'bearer token required' : 'none (localhost only)'));
+      console.log('Press Ctrl+C to stop.');
+    }
     console.error(
       'kanka-mcp v' + SERVER_INFO.version + ' ready (http://' + HTTP_BIND + ':' + HTTP_PORT +
       ', base: ' + API_BASE + (HTTP_TOKEN ? ', auth: bearer' : ', auth: none') + ')',

@@ -1,6 +1,6 @@
 {
   "name": "kanka-mcp",
-  "version": "1.1.0",
+  "version": "1.4.0",
   "description": "Zero-dependency MCP server for the Kanka.io API",
   "type": "module",
   "bin": {
@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "node server.js",
+    "build:win": "node windows/build.mjs",
     "test": "bash test/run.sh"
   },
   "engines": {
