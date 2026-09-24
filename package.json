@@ -1,0 +1,24 @@
+{
+  "name": "kanka-mcp",
+  "version": "1.1.0",
+  "description": "Zero-dependency MCP server for the Kanka.io API",
+  "type": "module",
+  "bin": {
+    "kanka-mcp": "server.js"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "test": "bash test/run.sh"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "kanka",
+    "rpg",
+    "worldbuilding",
+    "model-context-protocol"
+  ],
+  "license": "MIT"
+}
