@@ -1,3 +1,4 @@
+
 # kanka-mcp
 
 Serveur MCP (Model Context Protocol) **zéro dépendance** pour l'API
@@ -9,7 +10,7 @@ Serveur MCP (Model Context Protocol) **zéro dépendance** pour l'API
   permanent, systemd)
 - 15 outils : recherche globale, CRUD sur les 18 modules Kanka (characters, locations,
   notes, journals, events, creatures, abilities, tags, ...), posts des entités,
-  sous-ressources (attributes, relationships, inventory, ...)
+  sous-ressources (entity_abilities, attributes, inventory, ...)
 - Écriture en markdown convertie en HTML à la Kanka, mentions `[entity:123]` préservées
 - Auth HTTP optionnelle par bearer token
 

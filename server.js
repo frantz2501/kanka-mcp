@@ -1,3 +1,4 @@
+
 #!/usr/bin/env node
 /**
  * kanka-mcp - zero-dependency MCP server for the Kanka.io API (v1.0)
@@ -34,7 +35,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const PROTOCOL_VERSION = '2024-11-05';
-const SERVER_INFO = { name: 'kanka-mcp', version: '1.4.0' };
+const SERVER_INFO = { name: 'kanka-mcp', version: '1.4.1' };
 
 // --- Local app config file (env vars always win over file values)
 function loadConfigFile() {
@@ -84,8 +85,7 @@ const MODULES = [
 ];
 
 const ENTITY_SUBRESOURCES = [
-  'abilities', 'attributes', 'inventory', 'reminders', 'mentions', 'connections',
-  'relationships', 'entity_events',
+  'entity_abilities', 'attributes', 'inventory', 'reminders', 'mentions', 'image',
 ];
 
 // --- Markdown -> HTML (minimal, keeps Kanka [entity:123] mentions untouched)
@@ -220,7 +220,9 @@ const tools = {
       required: ['term'],
     },
     handler: (a) =>
-      api('GET', '/campaigns/' + campaignId(a) + '/search', { query: { q: a.term, page: a.page } }),
+      api('GET', '/campaigns/' + campaignId(a) + '/search/' + encodeURIComponent(a.term), {
+        query: { page: a.page },
+      }),
   },
   kanka_list: {
     description:
@@ -328,8 +330,8 @@ const tools = {
   },
   kanka_list_entity_relations: {
     description:
-      'List a sub-resource of an entity: abilities, attributes, inventory, reminders, mentions, ' +
-      'connections, relationships or entity_events.',
+      'List a sub-resource of an entity: entity_abilities, attributes, inventory, reminders, ' +
+      'mentions or image.',
     inputSchema: {
       type: 'object',
       properties: {

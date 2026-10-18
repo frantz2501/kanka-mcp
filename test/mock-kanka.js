@@ -1,3 +1,4 @@
+
 // Mock Kanka API for testing - loopback only.
 import http from 'node:http';
 let nextId = 100;
@@ -20,8 +21,9 @@ const server = http.createServer((req, res) => {
       return res.end(JSON.stringify({ data: [{ id: 42, name: 'Chroniques', locale: 'fr' }] }));
     if (req.method === 'GET' && path === '/campaigns/42')
       return res.end(JSON.stringify({ data: { id: 42, name: 'Chroniques' } }));
-    if (req.method === 'GET' && path === '/campaigns/42/search') {
-      const q = new URL(req.url, 'http://x').searchParams.get('q');
+    const sm = path.match(/^\/campaigns\/42\/search\/(.+)$/);
+    if (req.method === 'GET' && sm) {
+      const q = decodeURIComponent(sm[1]);
       return res.end(JSON.stringify({ data: [{ id: 7, entity_id: 77, name: 'Weng ' + q, child_id: 7 }] }));
     }
     let m = path.match(/^\/campaigns\/42\/entities\/(\d+)\/posts$/);

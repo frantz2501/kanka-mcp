@@ -1,3 +1,4 @@
+
 // MCP client harness: spawns the server, plays the handshake, calls tools, asserts.
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -65,6 +66,9 @@ assert(JSON.parse(txt(r)).data.entry.includes('<strong>session</strong>'), 'crea
 
 r = await call('kanka_list_entity_relations', { entity_id: 77, sub: 'inventory' });
 assert(JSON.parse(txt(r)).data.length === 1, 'entity sub-resource');
+
+r = await call('kanka_list_entity_relations', { entity_id: 77, sub: 'entity_abilities' });
+assert(JSON.parse(txt(r)).data.length === 1, 'entity_abilities sub-resource');
 
 r = await call('kanka_list', { module: 'characters', updated_since: '2026-01-01T00:00:00Z' });
 assert(!r.result.isError, 'list with lastSync');

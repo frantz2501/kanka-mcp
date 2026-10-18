@@ -1,7 +1,8 @@
+
 # Guide d'intégration du MCP `kanka-mcp` (à fournir au modèle)
 
 > **Objet** : ce document contient tout ce qu'un modèle (LLM/agent) doit connaître
-> pour utiliser le serveur MCP **kanka-mcp** v1.4.0, qui expose l'API
+> pour utiliser le serveur MCP **kanka-mcp** v1.4.1, qui expose l'API
 > [Kanka.io](https://kanka.io) (gestionnaire de campagnes de JDR).
 > Il peut être collé tel quel dans un prompt système ou un fichier de contexte.
 
@@ -204,8 +205,7 @@ Liste/pagination d'un module, avec filtres Kanka.
 
 #### `kanka_list_entity_relations`
 - `{ "entity_id" (requis), "sub" (requis), "campaign_id"?, "page"? }`
-- `sub` ∈ : `abilities, attributes, inventory, reminders, mentions, connections,
-  relationships, entity_events`
+- `sub` ∈ : `entity_abilities, attributes, inventory, reminders, mentions, image`
 
 > Les outils create/update/delete de sous-ressources génériques ne sont pas
 > exposés dans cette version : lire via `kanka_list_entity_relations`, écrire
