@@ -1,4 +1,3 @@
-
 # Guide d'intégration du MCP `kanka-mcp` (à fournir au modèle)
 
 > **Objet** : ce document contient tout ce qu'un modèle (LLM/agent) doit connaître

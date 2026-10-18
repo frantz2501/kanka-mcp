@@ -1,4 +1,3 @@
-
 // MCP client harness: spawns the server, plays the handshake, calls tools, asserts.
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';

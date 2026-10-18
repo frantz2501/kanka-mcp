@@ -1,4 +1,3 @@
-
 #!/usr/bin/env node
 /**
  * kanka-mcp - zero-dependency MCP server for the Kanka.io API (v1.0)

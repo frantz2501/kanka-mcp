@@ -1,4 +1,3 @@
-
 // Mock Kanka API for testing - loopback only.
 import http from 'node:http';
 let nextId = 100;

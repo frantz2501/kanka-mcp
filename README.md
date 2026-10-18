@@ -1,4 +1,3 @@
-
 # kanka-mcp
 
 Serveur MCP (Model Context Protocol) **zéro dépendance** pour l'API
